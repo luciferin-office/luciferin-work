@@ -2,7 +2,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('lxDesk', {
   app: true,
-  version: '1.0.0',
+  version: (() => { try { return ipcRenderer.sendSync('lx:ver'); } catch(_){ return ''; } })(),
   badge: n => ipcRenderer.send('lx:badge', Number(n) || 0),
   notify: o => ipcRenderer.send('lx:notify', { title: String(o?.title || ''), body: String(o?.body || ''), room: String(o?.room || ''), silent: !!o?.silent }),
   openOffice: v => ipcRenderer.send('lx:openOffice', String(v || 'home')),

@@ -1,7 +1,7 @@
 {
   "name": "luciferin-work",
   "productName": "루시페린 워크",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "루시페린 오피스 팀 대화 · 업무 PC 프로그램",
   "author": "루시페린",
   "main": "main.js",
@@ -20,7 +20,7 @@
   "build": {
     "appId": "kr.luciferin.work",
     "productName": "루시페린 워크",
-    "artifactName": "LuciferinWork-Setup-${version}.${ext}",
+    "artifactName": "LuciferinWork-Setup.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "build"

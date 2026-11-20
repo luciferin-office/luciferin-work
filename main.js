@@ -108,8 +108,9 @@ ipcMain.on('lx:badge', (_e, n) => setBadge(n));
 ipcMain.on('lx:notify', (_e, o) => notify(o || {}));
 ipcMain.on('lx:openOffice', (_e, v) => openOffice(String(v || 'home')));
 ipcMain.on('lx:openChat', () => showChat());
+ipcMain.on('lx:ver', e => { e.returnValue = app.getVersion(); });
 
-/* 자동 업데이트 — crm.luciferin.kr/desktop/ 에 새 설치 파일을 올리면 다음 실행 때 저절로 */
+/* 자동 업데이트 — GitHub 릴리스(luciferin-office/luciferin-work)에 새 판이 올라오면 받아 두고 다음 실행 때 바뀜 */
 function autoUpdate(){
   try { const { autoUpdater } = require('electron-updater'); autoUpdater.autoDownload = true; autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('update-downloaded', () => notify({ title: '루시페린 워크 새 버전', body: '새 버전을 받았습니다. 다음에 켤 때 바뀝니다.', silent: true }));
