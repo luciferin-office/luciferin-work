@@ -1,0 +1,38 @@
+{
+  "name": "luciferin-work",
+  "productName": "루시페린 워크",
+  "version": "1.0.0",
+  "description": "루시페린 오피스 팀 대화 · 업무 PC 프로그램",
+  "author": "루시페린",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "kr.luciferin.work",
+    "productName": "루시페린 워크",
+    "artifactName": "LuciferinWork-Setup-${version}.${ext}",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "build/tray.png", "build/icon.png", "package.json"],
+    "win": { "target": ["nsis"], "icon": "build/icon.ico" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "루시페린 워크",
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "publish": [{ "provider": "generic", "url": "https://crm.luciferin.kr/desktop/" }]
+  }
+}
