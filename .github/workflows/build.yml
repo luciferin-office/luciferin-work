@@ -1,14 +1,21 @@
 name: build-windows
-on: [workflow_dispatch, push]
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: write
 jobs:
   win:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+        with: { node-version: 22 }
       - run: npm install
-      - run: npm run dist
+      - run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: LuciferinWork
