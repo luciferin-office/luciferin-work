@@ -1,6 +1,6 @@
 // 루시페린 워크 — 루시페린 오피스(crm.luciferin.kr)를 그대로 담는 윈도우 프로그램
 // 대화 목록 창(#chatapp) · 방마다 작은 새 창(1.0.4) · 최소화 말풍선(1.0.4) · 업무 창(오피스) · 시계 옆 아이콘 · 작업표시줄 숫자 · 윈도우 알림 · 자동 실행 · 자동 업데이트
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, shell, ipcMain, screen, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, shell, ipcMain, screen, dialog, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -175,6 +175,32 @@ ipcMain.on('lx:roomState', (e, o) => { const R = roomOf(e.sender); if(!R || !o) 
   try { R.win.setTitle(`${R.name} · 루시페린 워크`); } catch(_){}
   if(R.mode === 'tb' && R.un > prev && !R.win.isFocused()){ R.win.flashFrame(true); try { R.win.setOverlayIcon(badgeIcon(R.un), `안 읽은 대화 ${R.un}개`); } catch(_){} }
   if(R.mode === 'bub') bubSync(); });
+
+
+/* ── 1.0.5 · PC 화면 영역 캡처 (대표님 11/22) ──
+   워크 창을 잠깐 숨기고 → 마우스가 있는 모니터를 찍어 → 그 그림 위에서 끌어 고른 영역만 잘라 화면에 돌려줌(보낼 줄에 들어감) */
+let capBusy = false;
+ipcMain.handle('lx:capScreen', async e => { if(capBusy) return null; capBusy = true; const me = BrowserWindow.fromWebContents(e.sender), R = roomOf(e.sender);
+  const shown = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed() && w.isVisible() && w !== bubWin && w !== splash); shown.forEach(w => { try { w.setOpacity(0); } catch(_){} });
+  try { await new Promise(r => setTimeout(r, 220)); const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()), sf = d.scaleFactor || 1, W = Math.round(d.size.width * sf), H = Math.round(d.size.height * sf);
+    const src = (await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: W, height: H } })), s = src.find(x => String(x.display_id) === String(d.id)) || src[0]; if(!s) return null; const full = s.thumbnail;
+    const pick = await new Promise(res => { const w = new BrowserWindow({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height, frame: false, resizable: false, movable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#000000', webPreferences: { preload: path.join(__dirname, 'cpreload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+      w.setAlwaysOnTop(true, 'screen-saver'); let done = false; const fin = v => { if(done) return; done = true; ipcMain.removeListener('cap:done', on); try { w.close(); } catch(_){} res(v); };
+      const on = (ev, r) => { if(ev.sender === w.webContents) fin(r); }; ipcMain.on('cap:done', on); w.on('closed', () => fin(null)); w.on('blur', () => {});
+      w.loadFile(path.join(__dirname, 'capture.html'), { query: { room: (R && R.name) || '' } }); w.webContents.once('did-finish-load', () => { w.webContents.send('cap:img', full.toDataURL()); w.show(); w.focus(); }); });
+    if(!pick || !(pick.w > 4) || !(pick.h > 4)) return null; const fx = full.getSize().width / pick.vw, fy = full.getSize().height / pick.vh;
+    const c = full.crop({ x: Math.max(0, Math.round(pick.x * fx)), y: Math.max(0, Math.round(pick.y * fy)), width: Math.max(1, Math.round(pick.w * fx)), height: Math.max(1, Math.round(pick.h * fy)) }); return c.toDataURL(); }
+  catch(_){ return null; }
+  finally { shown.forEach(w => { try { if(!w.isDestroyed()) w.setOpacity(1); } catch(_){} }); try { if(me && !me.isDestroyed()){ me.show(); me.focus(); } } catch(_){} capBusy = false; } });
+/* ── 1.0.5 · 모두 받기: 압축 없이 다운로드 › 루시페린 워크 › 방이름_날짜 폴더에 파일 그대로 ── */
+const DL_ROOT = () => path.join(app.getPath('downloads'), '루시페린 워크');
+const safeName = s => String(s || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || '받은 파일';
+ipcMain.handle('lx:saveFiles', async (_e, F, label) => { const L = (Array.isArray(F) ? F : []).filter(x => x && /^https:\/\//.test(String(x.url || ''))).slice(0, 60); if(!L.length) return { n: 0 };
+  const dir = path.join(DL_ROOT(), safeName(label || new Date().toISOString().slice(0, 10))); fs.mkdirSync(dir, { recursive: true }); let n = 0;
+  for(const x of L){ try { const r = await fetch(x.url); if(!r.ok) continue; const buf = Buffer.from(await r.arrayBuffer()); let nm = safeName(x.name), p = path.join(dir, nm), k = 1; const ext = path.extname(nm), base = nm.slice(0, nm.length - ext.length);
+      while(fs.existsSync(p)){ p = path.join(dir, `${base} (${k++})${ext}`); } fs.writeFileSync(p, buf); n++; } catch(_){} }
+  return { n, dir }; });
+ipcMain.on('lx:openPath', (_e, p) => { try { const root = path.resolve(DL_ROOT()), t = path.resolve(String(p || '')); if(t === root || t.startsWith(root + path.sep)) shell.openPath(t); } catch(_){} });
 
 /* 화면(오피스)과 주고받기 */
 ipcMain.on('lx:badge', (_e, n) => setBadge(n));

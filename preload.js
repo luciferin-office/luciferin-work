@@ -13,5 +13,8 @@ contextBridge.exposeInMainWorld('lxDesk', {
   mode: () => { try { return ipcRenderer.sendSync('lx:chatMode'); } catch(_){ return 'small'; } },
   openRoom: k => ipcRenderer.send('lx:openRoom', String(k || '')),
   closeRoom: () => ipcRenderer.send('lx:closeRoom'),
+  capScreen: () => ipcRenderer.invoke('lx:capScreen'),
+  saveFiles: (F, label) => ipcRenderer.invoke('lx:saveFiles', (Array.isArray(F) ? F : []).map(x => ({ url: String(x && x.url || ''), name: String(x && x.name || '') })), String(label || '')),
+  openPath: p => ipcRenderer.send('lx:openPath', String(p || '')),
   roomState: o => ipcRenderer.send('lx:roomState', { room: String(o?.room || ''), name: String(o?.name || ''), ini: String(o?.ini || ''), unread: Number(o?.unread) || 0, last: o?.last ? { id: Number(o.last.id) || 0, by: String(o.last.by || ''), body: String(o.last.body || '') } : null })
 });
