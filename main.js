@@ -123,19 +123,49 @@ ipcMain.on('lx:ver', e => { e.returnValue = app.getVersion(); });
 ipcMain.on('lx:chatSize', (_e, m) => resizeChat(m === 'big' ? 'big' : 'small'));
 ipcMain.on('lx:chatMode', e => { e.returnValue = chatMode(); });
 
-/* 자동 업데이트 — GitHub 릴리스(luciferin-office/luciferin-work)에 새 판이 올라오면 받아 두고 다음 실행 때 바뀜 */
-function autoUpdate(){
-  try { const { autoUpdater } = require('electron-updater'); autoUpdater.autoDownload = true; autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.on('update-downloaded', () => notify({ title: '루시페린 워크 새 버전', body: '새 버전을 받았습니다. 다음에 켤 때 바뀝니다.', silent: true }));
-    autoUpdater.checkForUpdates().catch(() => {}); setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 3600e3);
-  } catch(_){}
-}
+/* 자동 업데이트 (1.0.3 · 대표님 11/22: 끌 때 설치하면 컴퓨터가 꺼지며 설치가 끊길 수 있음 → 켤 때 먼저 바꾸고 열기)
+   ① 켜 둔 동안: GitHub 릴리스에 새 판이 있으면 뒤에서 받기만 함(끌 때 설치하지 않음) · 받으면 '다음에 켤 때 바꿉니다' 알림 한 번
+   ② 다음에 켤 때: 받아 둔 판이 있으면 대화 창 대신 '새 버전으로 바꾸는 중' 작은 창 → 조용히 설치 → 새 판으로 다시 열림
+   ③ 20초 안에 준비가 안 되면(인터넷 끊김 등) 건너뛰고 지금 판으로 그냥 켬 · 다음에 켤 때 다시(3번 넘게 안 되면 그 판은 잊음) */
+let upd = null, splash = null;
+function updater(){ if(upd) return upd; try { upd = require('electron-updater').autoUpdater; upd.autoDownload = true; upd.autoInstallOnAppQuit = false; } catch(_){ upd = null; } return upd; }
+function pendSet(v){ try { const s = loadState(); if(v) s.pend = { v, n: 0 }; else delete s.pend; fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }
+function splashHtml(v){ let logo = ''; try { logo = 'data:image/png;base64,' + fs.readFileSync(ICON).toString('base64'); } catch(_){}
+  return 'data:text/html;charset=utf-8,' + encodeURIComponent(`<!doctype html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",sans-serif;background:transparent;-webkit-user-select:none;user-select:none}
+  .c{position:absolute;inset:8px;border-radius:18px;background:#fff;box-shadow:0 18px 40px -16px rgba(15,22,45,.45),0 0 0 1px rgba(31,48,96,.08);overflow:hidden;display:flex;flex-direction:column}
+  .t{position:relative;padding:22px 22px 18px;background:radial-gradient(120px 70px at 88% 10%,rgba(233,214,168,.3),transparent 70%),radial-gradient(2px 2px at 74% 34%,rgba(255,236,180,.9),transparent 70%),radial-gradient(2px 2px at 60% 70%,rgba(255,236,180,.6),transparent 70%),linear-gradient(150deg,#2B3F7A,#1F3060 55%,#17244A);color:#fff;display:flex;gap:14px;align-items:center}
+  .t img{width:44px;height:44px;border-radius:12px;box-shadow:0 0 0 1px rgba(255,255,255,.15)}
+  .t small{display:block;font-size:10.5px;font-weight:700;letter-spacing:.14em;color:#E9D6A8}.t b{display:block;font-size:17px;font-weight:800;letter-spacing:-.02em;margin-top:3px}
+  .b{padding:16px 22px 18px}.b p{margin:0;font-size:13px;color:#1B2437;font-weight:700}.b em{display:block;font-style:normal;font-size:12px;color:#6B7489;margin-top:4px}
+  .bar{position:relative;height:6px;border-radius:99px;background:#EEF1F6;overflow:hidden;margin-top:14px}.bar i{position:absolute;inset:0;width:40%;border-radius:99px;background:linear-gradient(90deg,#1F3060,#2E86C1,#D6BA7E);animation:m 1.1s ease-in-out infinite}
+  @keyframes m{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}</style></head><body><div class="c">
+  <div class="t">${logo ? `<img src="${logo}">` : ''}<div><small>LUCIFERIN WORK · UPDATE</small><b>새 버전으로 바꾸는 중입니다</b></div></div>
+  <div class="b"><p>v${app.getVersion()} → v${v || '새 판'}</p><em>몇 초면 끝나고 저절로 다시 열립니다 · 컴퓨터를 끄지 마십시오</em><div class="bar"><i></i></div></div></div></body></html>`); }
+function showSplash(v){ splash = new BrowserWindow({ width: 400, height: 210, frame: false, transparent: true, resizable: false, movable: true, alwaysOnTop: true, skipTaskbar: false, show: false, title: '루시페린 워크 · 업데이트', icon: ICON, webPreferences: { sandbox: true, contextIsolation: true } });
+  splash.loadURL(splashHtml(v)); splash.once('ready-to-show', () => splash.show()); }
+/* 켤 때: 받아 둔 판이 있으면 먼저 바꿈. 없으면 바로 대화 창 */
+function startWithUpdate(open){ const s = loadState(), P = s.pend, u = updater();
+  if(!P || !u || P.v === app.getVersion()){ if(P) pendSet(null); open(); return; }
+  if((P.n || 0) >= 3){ pendSet(null); open(); return; }   // 세 번 넘게 못 바꾼 판은 잊고 지금 판으로
+  try { const t = loadState(); t.pend.n = (P.n || 0) + 1; fs.writeFileSync(STATE, JSON.stringify(t)); } catch(_){}
+  showSplash(P.v); let done = false;
+  const go = () => { if(done) return; done = true; setTimeout(() => { try { quitting = true; u.quitAndInstall(true, true); } catch(_){ quitting = false; if(splash && !splash.isDestroyed()) splash.close(); open(); } }, 600); };
+  const skip = () => { if(done) return; done = true; if(splash && !splash.isDestroyed()) splash.close(); open(); };
+  u.once('update-downloaded', go); u.once('error', skip);
+  u.checkForUpdates().then(r => { if(!r || !r.updateInfo || r.updateInfo.version === app.getVersion()) skip(); }).catch(skip);
+  setTimeout(skip, 20000); }
+/* 켜 둔 동안: 받기만 하고 다음 실행 때 바꿈 */
+function autoUpdate(){ const u = updater(); if(!u) return;
+  u.on('update-downloaded', info => { if(quitting) return; const v = info && info.version; if(!v || v === app.getVersion()) return; const s = loadState(); if(!s.pend || s.pend.v !== v){ pendSet(v); notify({ title: '루시페린 워크 새 버전', body: '새 버전을 받았습니다. 다음에 켤 때 먼저 바꾼 뒤 열립니다.', silent: true }); } });
+  u.on('error', () => {});
+  setTimeout(() => u.checkForUpdates().catch(() => {}), 15000); setInterval(() => u.checkForUpdates().catch(() => {}), 6 * 3600e3); }
 
 app.on('second-instance', () => showChat());
 app.on('before-quit', () => { quitting = true; });
 app.on('window-all-closed', e => { /* 시계 옆 아이콘으로 계속 켜 둠 */ });
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
-  buildTray(); showChat(); autoUpdate();
+  buildTray(); startWithUpdate(() => { showChat(); autoUpdate(); });
   if(!loadState().asked){ app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] }); const s = loadState(); s.asked = true; try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }   // 처음 설치하면 자동 실행 켬(메뉴에서 끌 수 있음)
 });

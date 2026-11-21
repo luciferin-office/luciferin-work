@@ -1,7 +1,7 @@
 {
   "name": "luciferin-work",
   "productName": "루시페린 워크",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "루시페린 오피스 팀 대화 · 업무 PC 프로그램",
   "author": "루시페린",
   "main": "main.js",
