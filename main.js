@@ -19,7 +19,16 @@ let chatWin = null, officeWin = null, tray = null, quitting = false, unread = 0;
 function loadState(){ try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch(_){ return {}; } }
 function saveState(key, win){ try { const s = loadState(); if(!win.isMinimized() && !win.isMaximized()) s[key] = win.getBounds(); s[key + 'Max'] = win.isMaximized(); fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }
 function onScreen(b){ if(!b) return false; return screen.getAllDisplays().some(d => { const a = d.workArea; return b.x < a.x + a.width - 80 && b.x + b.width > a.x + 80 && b.y >= a.y - 10 && b.y < a.y + a.height - 80; }); }
-function keep(key, win){ const t = () => saveState(key, win); win.on('resize', t); win.on('move', t); win.on('maximize', t); win.on('unmaximize', t); }
+function keep(key, win){ const t = () => saveState(key === 'chat' ? 'chat_' + chatMode() : key, win); win.on('resize', t); win.on('move', t); win.on('maximize', t); win.on('unmaximize', t); }
+/* 1.0.2 · 대화 창 작게(카카오워크처럼 한 줄) ↔ 크게(목록 · 대화 나눔). 처음 1.0.2를 켜면 한 번은 작게 시작 · 그 뒤로는 마지막 고른 크기 */
+const CHAT_SZ = { small: { width: 420, height: 700 }, big: { width: 1000, height: 700 } };
+function chatMode(){ const s = loadState(); return s.chatMode === 'big' ? 'big' : 'small'; }
+function setChatMode(m){ try { const s = loadState(); s.chatMode = m === 'big' ? 'big' : 'small'; fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }
+function chatBounds(m){ const s = loadState(), b = s['chat_' + m]; if(onScreen(b)) return b; const d = CHAT_SZ[m], a = screen.getPrimaryDisplay().workArea; return { width: d.width, height: Math.min(d.height, a.height - 40), x: a.x + a.width - d.width - 24, y: a.y + Math.max(20, Math.round((a.height - d.height) / 2)) }; }
+function resizeChat(m){ if(!chatWin || chatWin.isDestroyed()) return; if(chatWin.isMaximized()) chatWin.unmaximize(); const cur = chatWin.getBounds(); setChatMode(m); const s = loadState(), saved = s['chat_' + m], d = CHAT_SZ[m];
+  let b = onScreen(saved) ? saved : { width: d.width, height: cur.height, x: m === 'big' ? cur.x + cur.width - d.width : cur.x + cur.width - d.width, y: cur.y };
+  const a = screen.getDisplayMatching(cur).workArea; if(b.x < a.x) b.x = a.x + 8; if(b.x + b.width > a.x + a.width) b.x = a.x + a.width - b.width - 8;
+  chatWin.setBounds(b, true); }
 
 const isOurs = u => { try { return new URL(u).host === HOST; } catch(_){ return false; } };
 const viewOf = u => { try { return (new URL(u).hash.slice(1).split('?')[0]) || 'home'; } catch(_){ return 'home'; } };
@@ -38,8 +47,9 @@ function guard(win){
 
 function showChat(){
   if(chatWin && !chatWin.isDestroyed()){ if(chatWin.isMinimized()) chatWin.restore(); chatWin.show(); chatWin.focus(); return chatWin; }
-  const s = loadState(), b = onScreen(s.chat) ? s.chat : { width: 1000, height: 680 };
-  chatWin = new BrowserWindow({ ...b, minWidth: 380, minHeight: 480, title: '루시페린 워크', icon: ICON, backgroundColor: '#ffffff', autoHideMenuBar: true, show: false, webPreferences: webPrefs() });
+  const s = loadState(); if(!s.v102){ s.v102 = 1; s.chatMode = 'small'; try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }
+  const b = chatBounds(chatMode());
+  chatWin = new BrowserWindow({ ...b, minWidth: 360, minHeight: 480, title: '루시페린 워크', icon: ICON, backgroundColor: '#ffffff', autoHideMenuBar: true, show: false, webPreferences: webPrefs() });
   if(s.chatMax) chatWin.maximize();
   chatWin.loadURL(BASE + '/#chatapp');
   chatWin.once('ready-to-show', () => { if(!process.argv.includes('--hidden')) chatWin.show(); });
@@ -59,6 +69,7 @@ function openOffice(view){
   officeWin = new BrowserWindow({ ...b, minWidth: 900, minHeight: 600, title: '루시페린 오피스', icon: ICON, backgroundColor: '#ffffff', autoHideMenuBar: true, webPreferences: webPrefs() });
   if(s.officeMax) officeWin.maximize();
   officeWin.loadURL(url);
+  officeWin.on('close', e => { if(!quitting){ e.preventDefault(); officeWin.hide(); } });   // 1.0.2 · 닫아도 숨겨 두어 다음에 바로 열림(다시 불러오는 동안 기다리지 않게)
   officeWin.on('closed', () => { officeWin = null; });
   keep('office', officeWin); guard(officeWin);
 }
@@ -109,6 +120,8 @@ ipcMain.on('lx:notify', (_e, o) => notify(o || {}));
 ipcMain.on('lx:openOffice', (_e, v) => openOffice(String(v || 'home')));
 ipcMain.on('lx:openChat', () => showChat());
 ipcMain.on('lx:ver', e => { e.returnValue = app.getVersion(); });
+ipcMain.on('lx:chatSize', (_e, m) => resizeChat(m === 'big' ? 'big' : 'small'));
+ipcMain.on('lx:chatMode', e => { e.returnValue = chatMode(); });
 
 /* 자동 업데이트 — GitHub 릴리스(luciferin-office/luciferin-work)에 새 판이 올라오면 받아 두고 다음 실행 때 바뀜 */
 function autoUpdate(){

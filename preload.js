@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('lxDesk', {
   badge: n => ipcRenderer.send('lx:badge', Number(n) || 0),
   notify: o => ipcRenderer.send('lx:notify', { title: String(o?.title || ''), body: String(o?.body || ''), room: String(o?.room || ''), silent: !!o?.silent }),
   openOffice: v => ipcRenderer.send('lx:openOffice', String(v || 'home')),
-  openChat: () => ipcRenderer.send('lx:openChat')
+  openChat: () => ipcRenderer.send('lx:openChat'),
+  size: m => ipcRenderer.send('lx:chatSize', m === 'big' ? 'big' : 'small'),
+  mode: () => { try { return ipcRenderer.sendSync('lx:chatMode'); } catch(_){ return 'small'; } }
 });
