@@ -1,0 +1,49 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+/* 1.0.4 · 최소화 말풍선 — 시안 A 맑은 유리 (대표님 11/22: 뒤의 업무가 그대로 비쳐야 함 · 흐림 없음)
+   쉴 때: 아주 옅은 막 + 가는 테두리 · 새 글 · 마우스 올림: 흰 바탕 + 금빛 테두리로 또렷 */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:transparent;overflow:hidden;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",sans-serif;-webkit-user-select:none;user-select:none}
+#st{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+.it{position:relative;display:flex;align-items:center;gap:8px}
+.b{position:relative;width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;cursor:pointer;
+  background:rgba(255,255,255,.18);border:1px solid rgba(31,48,96,.22);box-shadow:0 0 0 1px rgba(255,255,255,.35),0 2px 8px rgba(15,23,42,.06);color:rgba(31,48,96,.6);text-shadow:0 0 3px #fff,0 0 6px rgba(255,255,255,.8);
+  transition:background .18s,border-color .18s,box-shadow .18s,color .18s}
+.it.hov .b,.it.new .b{background:rgba(255,255,255,.92);border:1.5px solid #D6BA7E;color:#1F3060;text-shadow:none;box-shadow:0 0 0 3px rgba(214,186,126,.35),0 8px 22px rgba(15,23,42,.16)}
+.b .n{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#E04F45;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;text-shadow:none;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+.bt{position:absolute;right:66px;top:50%;margin-top:-31px;display:flex;flex-direction:column;gap:6px;opacity:0;pointer-events:none;transform:translateX(6px);transition:opacity .14s,transform .14s}
+.it.hov .bt{opacity:1;pointer-events:auto;transform:none}
+.bt button{all:unset;cursor:pointer;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.95);border:1px solid #E5E9F2;box-shadow:0 4px 12px rgba(15,23,42,.16);color:#1F3060}
+.bt button:hover{background:#FBF6EA;border-color:#D6BA7E}
+.tip{position:absolute;right:100%;margin-right:8px;top:50%;transform:translateY(-50%);white-space:nowrap;background:rgba(31,48,96,.95);color:#fff;font-size:12px;font-weight:600;padding:5px 9px;border-radius:7px;opacity:0;pointer-events:none;transition:opacity .12s}
+.bt button:hover .tip{opacity:1}
+.pk{position:absolute;right:100%;margin-right:12px;bottom:4px;width:220px;background:rgba(255,255,255,.95);border:1px solid #E9D6A8;border-radius:14px 14px 4px 14px;padding:8px 11px;box-shadow:0 10px 26px rgba(15,23,42,.16);font-size:12.5px;line-height:1.45;color:#30384A;opacity:0;transform:translateX(8px);transition:opacity .2s,transform .2s;pointer-events:none}
+.pk b{display:block;font-size:11.5px;color:#1F3060}.pk span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.it.peek .pk{opacity:1;transform:none}
+.it.hov .pk,#st:has(.hov) .pk{opacity:0}
+.more{all:unset;cursor:pointer;width:40px;height:40px;margin-right:9px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;background:rgba(255,255,255,.18);border:1px solid rgba(31,48,96,.22);color:rgba(31,48,96,.6);text-shadow:0 0 3px #fff}
+.more:hover{background:rgba(255,255,255,.92);border-color:#D6BA7E;color:#1F3060}
+</style></head><body><div id="st"></div>
+<script>
+const SV = { tb: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>', x: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let L = [], seen = {}, newU = {}, peekU = {}, open = false, hov = '', first = true;
+function draw(){ const now = Date.now(), V = open ? L : L.slice(-4), more = L.length - V.length;
+  document.getElementById('st').innerHTML = (more > 0 ? `<button class="more hit" data-more="1" title="접어 둔 방 ${more}개 더 보기">+${more}</button>` : '') + V.map(r => `<div class="it hit${hov === r.k ? ' hov' : ''}${(newU[r.k] || 0) > now ? ' new' : ''}${(peekU[r.k] || 0) > now ? ' peek' : ''}" data-k="${esc(r.k)}">
+    ${r.last ? `<div class="pk"><b>${esc(r.last.by)} · ${esc(r.name)}</b><span>${esc(r.last.body)}</span></div>` : ''}
+    <div class="bt"><button data-tb="1">${SV.tb}<span class="tip">작업 표시줄로 내리기</span></button><button data-x="1">${SV.x}<span class="tip">대화창 닫기</span></button></div>
+    <div class="b" title="${esc(r.name)} · 누르면 다시 열립니다">${esc(r.ini || '?')}${r.un ? `<span class="n">${r.un > 99 ? '99+' : r.un}</span>` : ''}</div></div>`).join(''); }
+bub.on(d => { const now = Date.now(); (d || []).forEach(r => { const id = r.last ? r.last.id : 0; if(!first && seen[r.k] !== undefined && id && id !== seen[r.k] && r.un > 0){ newU[r.k] = now + 6000; peekU[r.k] = now + 5000; setTimeout(draw, 6100); setTimeout(draw, 5100); } if(seen[r.k] === undefined && !first && r.un > 0){ /* 접는 순간에는 알리지 않음 */ } seen[r.k] = id; });
+  first = false; L = d || []; if(L.length <= 4) open = false; draw(); });
+/* 투명한 곳은 클릭이 뒤로 지나감 — 말풍선 위에 있을 때만 이 창이 받음 */
+let hit = false, down = null;
+document.addEventListener('mousemove', e => { const t = e.target.closest && e.target.closest('.hit'); if(!!t !== hit){ hit = !!t; bub.hit(hit); }
+  const it = e.target.closest && e.target.closest('.it'), k = it ? it.dataset.k : ''; if(k !== hov && !down){ hov = k; draw(); }
+  if(down){ const dx = e.screenX - down.x, dy = e.screenY - down.y; if(!down.mv && Math.abs(dx) + Math.abs(dy) > 5){ down.mv = true; bub.dragStart(); } if(down.mv) bub.drag(dx, dy); } });
+document.addEventListener('mouseleave', () => { if(down) return; hit = false; bub.hit(false); if(hov){ hov = ''; draw(); } });
+document.addEventListener('mousedown', e => { if(e.button !== 0) return; const b = e.target.closest('.b'); if(b) down = { x: e.screenX, y: e.screenY, k: b.closest('.it').dataset.k, mv: false }; });
+document.addEventListener('mouseup', e => { if(!down) return; const d = down; down = null; if(d.mv){ bub.dragEnd(); return; } bub.open(d.k); });
+document.addEventListener('click', e => { const t = e.target.closest('button'); if(!t) return; const it = t.closest('.it');
+  if(t.dataset.more){ open = !open; draw(); return; } if(!it) return; if(t.dataset.tb) bub.taskbar(it.dataset.k); else if(t.dataset.x) bub.close(it.dataset.k); });
+</script></body></html>

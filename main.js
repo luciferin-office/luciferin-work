@@ -1,6 +1,6 @@
 // 루시페린 워크 — 루시페린 오피스(crm.luciferin.kr)를 그대로 담는 윈도우 프로그램
-// 대화 창(#chatapp) · 업무 창(오피스) · 시계 옆 아이콘 · 작업표시줄 숫자 · 윈도우 알림 · 자동 실행 · 자동 업데이트
-const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, shell, ipcMain, screen } = require('electron');
+// 대화 목록 창(#chatapp) · 방마다 작은 새 창(1.0.4) · 최소화 말풍선(1.0.4) · 업무 창(오피스) · 시계 옆 아이콘 · 작업표시줄 숫자 · 윈도우 알림 · 자동 실행 · 자동 업데이트
+const { app, BrowserWindow, Tray, Menu, Notification, nativeImage, shell, ipcMain, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -47,7 +47,7 @@ function guard(win){
 
 function showChat(){
   if(chatWin && !chatWin.isDestroyed()){ if(chatWin.isMinimized()) chatWin.restore(); chatWin.show(); chatWin.focus(); return chatWin; }
-  const s = loadState(); if(!s.v102){ s.v102 = 1; s.chatMode = 'small'; try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }
+  const s = loadState(); if(!s.v104){ s.v102 = 1; s.v104 = 1; s.chatMode = 'small'; try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }   // 1.0.4 · 목록 창은 작게(방은 새 창으로 열리므로)
   const b = chatBounds(chatMode());
   chatWin = new BrowserWindow({ ...b, minWidth: 360, minHeight: 480, title: '루시페린 워크', icon: ICON, backgroundColor: '#ffffff', autoHideMenuBar: true, show: false, webPreferences: webPrefs() });
   if(s.chatMax) chatWin.maximize();
@@ -92,8 +92,9 @@ function setBadge(n){
 function notify(o){
   if(!Notification.isSupported()) return;
   if(chatWin && chatWin.isVisible() && chatWin.isFocused()) return;
+  if(o.room){ const R = rooms.get(String(o.room)); if(R && !R.win.isDestroyed() && R.win.isVisible() && R.win.isFocused()) return; }   // 그 방 창을 보고 있으면 알리지 않음
   const n = new Notification({ title: String(o.title || '팀 대화').slice(0, 80), body: String(o.body || '').slice(0, 200), icon: ICON, silent: !!o.silent });
-  n.on('click', () => { const w = showChat(); if(o.room) w.webContents.executeJavaScript(`try{S.cxa.room=${JSON.stringify(String(o.room))};S.cxa.nl=false;S.cxa.sig='';pxCxSync()}catch(e){}`).catch(() => {}); });
+  n.on('click', () => { if(o.room) openRoom(String(o.room)); else showChat(); });
   n.show();
 }
 
@@ -105,6 +106,7 @@ function buildTray(){
     { label: '대화 열기', click: () => showChat() },
     { label: '오피스 열기', click: () => openOffice('home') },
     { type: 'separator' },
+    { label: '대화창을 최소화하면', submenu: [{ label: '화면 아래 말풍선으로 (추천)', type: 'radio', checked: minPref() === 'bubble', click: () => setMinPref('bubble') }, { label: '작업 표시줄로', type: 'radio', checked: minPref() === 'taskbar', click: () => setMinPref('taskbar') }] },
     { label: '컴퓨터를 켜면 자동 실행', type: 'checkbox', checked: autoStart(), click: i => { app.setLoginItemSettings({ openAtLogin: i.checked, args: ['--hidden'] }); } },
     { type: 'separator' },
     { label: '루시페린 워크 끝내기', click: () => { quitting = true; app.quit(); } }
@@ -113,6 +115,66 @@ function buildTray(){
   tray.on('right-click', () => tray.setContextMenu(menu()));
   tray.on('click', () => { if(chatWin && chatWin.isVisible() && chatWin.isFocused()) chatWin.hide(); else showChat(); });
 }
+
+
+/* ── 1.0.4 · 방마다 작은 새 창 (대표님 11/22) ──
+   목록 창에서 방을 누르면 그 방만 420×700 창으로 · 같은 방은 창 하나 · Esc 로 닫기(화면 쪽에서 lx:closeRoom)
+   최소화하면: 말풍선(기본) — 창을 숨기고 화면 오른쪽 아래 투명 말풍선 · 작업 표시줄 — 보통 최소화 + 새 글이면 깜빡임 */
+const ROOM_SZ = { width: 420, height: 700 }, ROOM_MAX = 6, rooms = new Map();
+function minPref(){ return loadState().minMode === 'taskbar' ? 'taskbar' : 'bubble'; }
+function setMinPref(m){ try { const s = loadState(); s.minMode = m === 'taskbar' ? 'taskbar' : 'bubble'; s.minAsked = 1; fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }
+function roomBounds(){ const s = loadState(), n = [...rooms.values()].filter(r => !r.win.isDestroyed() && r.win.isVisible()).length, a = screen.getPrimaryDisplay().workArea;
+  let b = onScreen(s.room) ? { ...s.room } : null;
+  if(!b){ const c = chatWin && !chatWin.isDestroyed() ? chatWin.getBounds() : null; b = { width: ROOM_SZ.width, height: Math.min(ROOM_SZ.height, a.height - 40), x: c ? c.x - ROOM_SZ.width - 12 : a.x + a.width - ROOM_SZ.width * 2 - 40, y: c ? c.y : a.y + Math.max(20, Math.round((a.height - ROOM_SZ.height) / 2)) }; }
+  b.x -= n * 28; b.y += n * 28; if(b.x < a.x) b.x = a.x + 8 + n * 28; if(b.y + b.height > a.y + a.height) b.y = a.y + 8 + n * 12; return b; }
+function openRoom(k){ k = String(k || ''); if(!k || k === '__none') return null; let R = rooms.get(k);
+  if(R && !R.win.isDestroyed()){ R.mode = 'open'; bubSync(); if(R.win.isMinimized()) R.win.restore(); R.win.show(); R.win.focus(); return R.win; }
+  if(rooms.size >= ROOM_MAX){ const old = [...rooms.values()].sort((a, b) => (a.mode === 'open') - (b.mode === 'open') || a.at - b.at)[0]; try { old.win.close(); } catch(_){} }
+  const win = new BrowserWindow({ ...roomBounds(), minWidth: 340, minHeight: 420, title: '루시페린 워크', icon: ICON, backgroundColor: '#ffffff', autoHideMenuBar: true, show: false, webPreferences: webPrefs() });
+  R = { k, win, name: '', ini: '', un: 0, last: null, mode: 'open', at: Date.now(), bat: 0 }; rooms.set(k, R);
+  win.loadURL(BASE + '/#chatapp?solo=' + encodeURIComponent(k));
+  win.once('ready-to-show', () => { win.show(); win.focus(); });
+  win.on('focus', () => { R.at = Date.now(); win.flashFrame(false); try { win.setOverlayIcon(null, ''); } catch(_){} });
+  win.on('minimize', () => { if(R.mode === 'tb' || minPref() === 'taskbar'){ R.mode = 'tb'; bubSync(); return; } R.mode = 'bub'; R.bat = Date.now(); win.hide(); bubSync(); });
+  win.on('restore', () => { if(R.mode !== 'bub'){ R.mode = 'open'; bubSync(); } });
+  win.on('show', () => { if(R.mode === 'bub'){ R.mode = 'open'; bubSync(); } });
+  const t = () => { try { if(!win.isMinimized() && !win.isMaximized() && win.isVisible()){ const s = loadState(); const b = win.getBounds(); s.room = { width: b.width, height: b.height, x: b.x, y: b.y }; fs.writeFileSync(STATE, JSON.stringify(s)); } } catch(_){} };
+  win.on('resize', t); win.on('move', t);
+  win.on('closed', () => { rooms.delete(k); bubSync(); });
+  guard(win); return win; }
+function roomOf(wc){ for(const R of rooms.values()) if(!R.win.isDestroyed() && R.win.webContents === wc) return R; return null; }
+/* 말풍선 창 — 투명 · 항상 위 · 작업 표시줄에 안 보임 · 투명한 곳 클릭은 뒤로 지나감 */
+let bubWin = null, bubDrag = null;
+const BUB_W = 320, BUB_H = 460;
+function bubPos(){ const s = loadState(), a = screen.getPrimaryDisplay().workArea; let p = s.bub; if(!p || !screen.getAllDisplays().some(d => { const w = d.workArea; return p.x + BUB_W - 40 > w.x && p.x + BUB_W - 40 < w.x + w.width && p.y + BUB_H - 40 > w.y && p.y + BUB_H - 40 < w.y + w.height; })) p = { x: a.x + a.width - BUB_W - 8, y: a.y + a.height - BUB_H - 8 }; return p; }
+function ensureBub(){ if(bubWin && !bubWin.isDestroyed()) return bubWin; const p = bubPos();
+  bubWin = new BrowserWindow({ x: p.x, y: p.y, width: BUB_W, height: BUB_H, frame: false, transparent: true, resizable: false, movable: true, minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false, hasShadow: false, show: false, title: '루시페린 워크 말풍선', backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'bpreload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, backgroundThrottling: false } });
+  bubWin.setAlwaysOnTop(true, 'floating'); bubWin.setIgnoreMouseEvents(true, { forward: true });
+  bubWin.loadFile(path.join(__dirname, 'bubble.html')); bubWin.webContents.once('did-finish-load', () => bubSync());
+  bubWin.on('closed', () => { bubWin = null; }); return bubWin; }
+function bubSync(){ const L = [...rooms.values()].filter(r => r.mode === 'bub' && !r.win.isDestroyed()).sort((a, b) => a.bat - b.bat);
+  if(!L.length){ if(bubWin && !bubWin.isDestroyed()) bubWin.hide(); return; }
+  const w = ensureBub(); if(w.webContents.isLoading()) return;
+  w.webContents.send('bub:data', L.map(r => ({ k: r.k, name: r.name || '대화', ini: r.ini || '?', un: r.un, last: r.last })));
+  if(!w.isVisible()) w.showInactive(); }
+ipcMain.on('bub:hit', (_e, on) => { if(bubWin && !bubWin.isDestroyed()) bubWin.setIgnoreMouseEvents(!on, { forward: true }); });
+ipcMain.on('bub:open', (_e, k) => openRoom(k));
+ipcMain.on('bub:close', (_e, k) => { const R = rooms.get(String(k)); if(R && !R.win.isDestroyed()) R.win.close(); });
+ipcMain.on('bub:tb', async (_e, k) => { const R = rooms.get(String(k)); if(!R || R.win.isDestroyed()) return; R.mode = 'tb'; bubSync();
+  R.win.showInactive(); R.win.minimize();
+  const s = loadState(); if(s.minAsked) return;
+  const r = await dialog.showMessageBox({ type: 'info', title: '루시페린 워크', message: '작업 표시줄로 내렸습니다', detail: `${R.name || '대화'} 대화창을 작업 표시줄로 내렸습니다.\n작업 표시줄의 루시페린 워크 아이콘을 누르면 다시 열립니다.\n\n나중에 바꾸려면 시계 옆 워크 아이콘 › 대화창을 최소화하면 에서 고릅니다.`, buttons: ['앞으로도 작업 표시줄로', '이번만'], defaultId: 1, cancelId: 1, noLink: true });
+  if(r.response === 0) setMinPref('taskbar'); else { const t = loadState(); t.minAsked = 1; try { fs.writeFileSync(STATE, JSON.stringify(t)); } catch(_){} } });
+ipcMain.on('bub:drag0', () => { if(bubWin && !bubWin.isDestroyed()) bubDrag = bubWin.getBounds(); });
+ipcMain.on('bub:drag', (_e, dx, dy) => { if(bubDrag && bubWin && !bubWin.isDestroyed()) bubWin.setBounds({ x: bubDrag.x + (dx | 0), y: bubDrag.y + (dy | 0), width: BUB_W, height: BUB_H }); });
+ipcMain.on('bub:drag1', () => { bubDrag = null; if(bubWin && !bubWin.isDestroyed()){ try { const s = loadState(), b = bubWin.getBounds(); s.bub = { x: b.x, y: b.y }; fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} } });
+ipcMain.on('lx:openRoom', (_e, k) => openRoom(k));
+ipcMain.on('lx:closeRoom', e => { const R = roomOf(e.sender); if(R) R.win.close(); });
+ipcMain.on('lx:roomState', (e, o) => { const R = roomOf(e.sender); if(!R || !o) return; const prev = R.un; R.name = String(o.name || R.name); R.ini = String(o.ini || R.ini); R.un = o.unread | 0; R.last = o.last || null;
+  try { R.win.setTitle(`${R.name} · 루시페린 워크`); } catch(_){}
+  if(R.mode === 'tb' && R.un > prev && !R.win.isFocused()){ R.win.flashFrame(true); try { R.win.setOverlayIcon(badgeIcon(R.un), `안 읽은 대화 ${R.un}개`); } catch(_){} }
+  if(R.mode === 'bub') bubSync(); });
 
 /* 화면(오피스)과 주고받기 */
 ipcMain.on('lx:badge', (_e, n) => setBadge(n));
@@ -162,6 +224,7 @@ function autoUpdate(){ const u = updater(); if(!u) return;
   setTimeout(() => u.checkForUpdates().catch(() => {}), 15000); setInterval(() => u.checkForUpdates().catch(() => {}), 6 * 3600e3); }
 
 app.on('second-instance', () => showChat());
+screen && app.on('ready', () => { try { screen.on('display-removed', () => { if(bubWin && !bubWin.isDestroyed()){ const p = bubPos(); bubWin.setBounds({ x: p.x, y: p.y, width: BUB_W, height: BUB_H }); } }); } catch(_){} });
 app.on('before-quit', () => { quitting = true; });
 app.on('window-all-closed', e => { /* 시계 옆 아이콘으로 계속 켜 둠 */ });
 app.whenReady().then(() => {
