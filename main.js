@@ -258,3 +258,24 @@ app.whenReady().then(() => {
   buildTray(); startWithUpdate(() => { showChat(); autoUpdate(); });
   if(!loadState().asked){ app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] }); const s = loadState(); s.asked = true; try { fs.writeFileSync(STATE, JSON.stringify(s)); } catch(_){} }   // 처음 설치하면 자동 실행 켬(메뉴에서 끌 수 있음)
 });
+
+
+/* 1.0.6 · 오피스 '기관에 보내기' — 파일 셋을 잠깐 임시 폴더에 받아 두고, 화면의 '파일 셋' 묶음을 카톡 방 창으로 끌어다 놓게 함
+   다운로드 폴더에 남기지 않음 · 임시 파일은 10분 뒤(또는 창을 닫고 2분 뒤 · 프로그램을 끌 때) 지움 */
+const SEND_ROOT = path.join(app.getPath('temp'), 'lx_send');
+const SEND = new Map();
+const sendDrop = token => { const files = SEND.get(token); if(!files) return; try { fs.rmSync(path.dirname(files[0] || path.join(SEND_ROOT, token, 'x')), { recursive: true, force: true }); } catch(_){} SEND.delete(token); };
+ipcMain.handle('lx:stageFiles', async (_e, F) => { const L = (Array.isArray(F) ? F : []).filter(x => x && /^https:\/\//.test(String(x.url || ''))).slice(0, 10); if(!L.length) return { token: '', n: 0 };
+  const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8), dir = path.join(SEND_ROOT, token); fs.mkdirSync(dir, { recursive: true }); const files = [];
+  for(const x of L){ try { const r = await fetch(x.url); if(!r.ok) continue; const p = path.join(dir, safeName(x.name)); fs.writeFileSync(p, Buffer.from(await r.arrayBuffer())); files.push(p); } catch(_){} }
+  if(!files.length){ try { fs.rmSync(dir, { recursive: true, force: true }); } catch(_){} return { token: '', n: 0 }; }
+  SEND.set(token, files); setTimeout(() => sendDrop(token), 10 * 60e3); return { token, n: files.length }; });
+ipcMain.on('lx:dragFiles', (e, token) => { const files = SEND.get(String(token || '')); if(!files || !files.length) return; let icon = nativeImage.createFromPath(ICON); if(!icon.isEmpty()) icon = icon.resize({ width: 48, height: 48 });
+  try { e.sender.startDrag({ file: files[0], files, icon }); } catch(_){} });
+ipcMain.on('lx:unstage', (_e, token) => { const t = String(token || ''); setTimeout(() => sendDrop(t), 2 * 60e3); });
+app.on('will-quit', () => { try { fs.rmSync(SEND_ROOT, { recursive: true, force: true }); } catch(_){} });
+/* 1.0.6 · 파일 셋 '복사' — 윈도우 클립보드에 파일 셋을 올려, 카톡 방에서 Ctrl+V 로 붙여넣게 함(탐색기에서 파일 복사와 같은 꼴) */
+const { execFile } = require('child_process');
+ipcMain.handle('lx:copyFiles', (_e, token) => new Promise(res => { const files = SEND.get(String(token || '')); if(!files || !files.length) return res({ ok: false });
+  const list = files.map(p => "'" + String(p).replace(/'/g, "''") + "'").join(',');
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', `Set-Clipboard -Path ${list}`], { windowsHide: true, timeout: 8000 }, err => res({ ok: !err, n: files.length })); }));

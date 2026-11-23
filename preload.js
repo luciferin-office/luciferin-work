@@ -3,6 +3,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const solo = (() => { try { return /[?&]solo=/.test(location.hash); } catch(_){ return false; } })();
 contextBridge.exposeInMainWorld('lxDesk', {
+  stageFiles: F => ipcRenderer.invoke('lx:stageFiles', (Array.isArray(F) ? F : []).map(x => ({ url: String(x && x.url || ''), name: String(x && x.name || '') }))),
+  dragFiles: t => ipcRenderer.send('lx:dragFiles', String(t || '')),
+  copyFiles: t => ipcRenderer.invoke('lx:copyFiles', String(t || '')),
+  unstage: t => ipcRenderer.send('lx:unstage', String(t || '')),
   app: true,
   version: (() => { try { return ipcRenderer.sendSync('lx:ver'); } catch(_){ return ''; } })(),
   badge: n => { if(!solo) ipcRenderer.send('lx:badge', Number(n) || 0); },
