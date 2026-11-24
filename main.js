@@ -274,8 +274,25 @@ ipcMain.on('lx:dragFiles', (e, token) => { const files = SEND.get(String(token |
   try { e.sender.startDrag({ file: files[0], files, icon }); } catch(_){} });
 ipcMain.on('lx:unstage', (_e, token) => { const t = String(token || ''); setTimeout(() => sendDrop(t), 2 * 60e3); });
 app.on('will-quit', () => { try { fs.rmSync(SEND_ROOT, { recursive: true, force: true }); } catch(_){} });
-/* 1.0.6 · 파일 셋 '복사' — 윈도우 클립보드에 파일 셋을 올려, 카톡 방에서 Ctrl+V 로 붙여넣게 함(탐색기에서 파일 복사와 같은 꼴) */
+/* 1.0.7 · 파일 셋 '복사' — 탐색기에서 Ctrl+C 한 것과 같은 꼴로 클립보드에 올림 (대표님 11/24 "카톡에 Ctrl+V 해도 안 들어감")
+   1.0.6 의 Set-Clipboard -Path 는 파일 목록(CF_HDROP)만 올려 카톡이 붙여넣기를 받지 않았음
+   → 파일 목록 + 'Preferred DropEffect'(복사) + FileNameW 를 함께 올리고, 프로그램이 끝나도 남게(SetDataObject copy) · 올라갔는지 다시 읽어 확인 */
 const { execFile } = require('child_process');
-ipcMain.handle('lx:copyFiles', (_e, token) => new Promise(res => { const files = SEND.get(String(token || '')); if(!files || !files.length) return res({ ok: false });
-  const list = files.map(p => "'" + String(p).replace(/'/g, "''") + "'").join(',');
-  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', `Set-Clipboard -Path ${list}`], { windowsHide: true, timeout: 8000 }, err => res({ ok: !err, n: files.length })); }));
+const psQ = s => "'" + String(s).replace(/'/g, "''") + "'";
+ipcMain.handle('lx:copyFiles', (_e, token) => new Promise(res => { const files = (SEND.get(String(token || '')) || []).filter(p => { try { return fs.existsSync(p); } catch(_){ return false; } });
+  if(!files.length) return res({ ok: false, why: 'gone' });
+  const ps = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '$sc = New-Object System.Collections.Specialized.StringCollection',
+    ...files.map(p => `[void]$sc.Add(${psQ(p)})`),
+    '$d = New-Object System.Windows.Forms.DataObject',
+    '$d.SetFileDropList($sc)',
+    "$d.SetData('Preferred DropEffect', (New-Object System.IO.MemoryStream(,[byte[]](5,0,0,0))))",
+    `$d.SetData('FileNameW', (New-Object System.IO.MemoryStream(,[System.Text.Encoding]::Unicode.GetBytes(${psQ(files[0])} + [char]0))))`,
+    '[System.Windows.Forms.Clipboard]::SetDataObject($d, $true, 10, 100)',
+    'Start-Sleep -Milliseconds 150',
+    "if([System.Windows.Forms.Clipboard]::ContainsFileDropList()){ [Console]::Out.Write([System.Windows.Forms.Clipboard]::GetFileDropList().Count) } else { [Console]::Out.Write('0') }"
+  ].join('\n');
+  const enc = Buffer.from(ps, 'utf16le').toString('base64');
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', enc], { windowsHide: true, timeout: 12000 }, (err, out) => {
+    const n = parseInt(String(out || '').trim(), 10) || 0; res({ ok: !err && n > 0, n, why: err ? 'ps' : n ? '' : 'empty' }); }); }));
