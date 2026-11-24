@@ -181,8 +181,9 @@ ipcMain.on('lx:roomState', (e, o) => { const R = roomOf(e.sender); if(!R || !o) 
    워크 창을 잠깐 숨기고 → 마우스가 있는 모니터를 찍어 → 그 그림 위에서 끌어 고른 영역만 잘라 화면에 돌려줌(보낼 줄에 들어감) */
 let capBusy = false;
 ipcMain.handle('lx:capScreen', async e => { if(capBusy) return null; capBusy = true; const me = BrowserWindow.fromWebContents(e.sender), R = roomOf(e.sender);
-  const shown = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed() && w.isVisible() && w !== bubWin && w !== splash); shown.forEach(w => { try { w.setOpacity(0); } catch(_){} });
-  try { await new Promise(r => setTimeout(r, 220)); const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()), sf = d.scaleFactor || 1, W = Math.round(d.size.width * sf), H = Math.round(d.size.height * sf);
+  /* 1.0.9 · 워크 창을 숨기지 않음 — 보이는 화면 그대로(오피스 창 · 대화 창 포함) 찍음. 전에는 워크 창을 모두 숨겨 오피스 · 대화 화면을 찍을 수 없었음 */
+  const shown = []; shown.forEach(w => { try { w.setOpacity(0); } catch(_){} });
+  try { await new Promise(r => setTimeout(r, 80)); const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()), sf = d.scaleFactor || 1, W = Math.round(d.size.width * sf), H = Math.round(d.size.height * sf);
     const src = (await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: W, height: H } })), s = src.find(x => String(x.display_id) === String(d.id)) || src[0]; if(!s) return null; const full = s.thumbnail;
     const pick = await new Promise(res => { const w = new BrowserWindow({ x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height, frame: false, resizable: false, movable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#000000', webPreferences: { preload: path.join(__dirname, 'cpreload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
       w.setAlwaysOnTop(true, 'screen-saver'); let done = false; const fin = v => { if(done) return; done = true; ipcMain.removeListener('cap:done', on); try { w.close(); } catch(_){} res(v); };
