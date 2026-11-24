@@ -5,6 +5,7 @@ const solo = (() => { try { return /[?&]solo=/.test(location.hash); } catch(_){ 
 contextBridge.exposeInMainWorld('lxDesk', {
   stageFiles: F => ipcRenderer.invoke('lx:stageFiles', (Array.isArray(F) ? F : []).map(x => ({ url: String(x && x.url || ''), name: String(x && x.name || '') }))),
   dragFiles: t => ipcRenderer.send('lx:dragFiles', String(t || '')),
+  onDragErr: cb => { ipcRenderer.removeAllListeners('lx:dragErr'); ipcRenderer.on('lx:dragErr', (_e, m) => { try { cb(String(m || '')); } catch(_){} }); },   /* 1.0.8 */
   copyFiles: t => ipcRenderer.invoke('lx:copyFiles', String(t || '')),
   unstage: t => ipcRenderer.send('lx:unstage', String(t || '')),
   app: true,
